@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mon épargne - Démo</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#CC0000">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root { --noir:#0D0D0D; --rouge:#CC0000; --gris:#666; --vert:#2e7d32; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Arial, Helvetica, sans-serif; background:#f2f2f2; color:var(--noir); }
+  header { background:var(--noir); color:#fff; padding:12px 16px; display:flex; align-items:center; gap:10px; }
+  header img { height:36px; }
+  header h1 { font-size:17px; margin:0; }
+  main { max-width:520px; margin:0 auto; padding:12px; }
+  .card { background:#fff; border-radius:12px; padding:14px; box-shadow:0 2px 6px rgba(0,0,0,.07); margin-bottom:12px; }
+  h2 { font-size:16px; margin:0 0 10px; color:var(--rouge); }
+  input, select { width:100%; padding:11px; font-size:16px; border:1px solid #ccc; border-radius:8px; margin-bottom:8px; }
+  button { background:var(--rouge); color:#fff; border:0; border-radius:8px; padding:11px 14px; font-size:15px; font-weight:bold; cursor:pointer; }
+  button.sec { background:#fff; color:var(--rouge); border:1px solid var(--rouge); }
+  button.wa { background:#25D366; }
+  .row { display:flex; gap:8px; }
+  .row > * { flex:1; }
+  .bar { height:18px; background:#eee; border-radius:9px; overflow:hidden; margin:8px 0; }
+  .bar div { height:100%; background:var(--vert); transition:width .4s; }
+  .big { font-size:22px; font-weight:bold; text-align:center; }
+  .hint { font-size:13px; color:var(--gris); margin-top:4px; }
+  .ok { color:var(--vert); font-weight:bold; }
+  .alerte { color:var(--rouge); font-weight:bold; }
+  .mvt { font-size:13px; border-bottom:1px solid #eee; padding:6px 0; display:flex; justify-content:space-between; gap:8px; }
+  .mvt.retrait { color:var(--rouge); }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <img src="logo_solution_digital_original.png" alt="" onerror="this.style.display='none'">
+  <h1>Mon épargne</h1>
+</header>
+
+<main>
+  <div class="card" id="carteObjectif">
+    <h2 id="titreObj">Aucun objectif</h2>
+    <div class="big" id="montantObj"></div>
+    <div class="bar"><div id="progress" style="width:0%"></div></div>
+    <div class="hint" id="pourcent"></div>
+    <div class="hint" id="jours"></div>
+    <div class="hint" id="rythme"></div>
+    <div class="hint" id="alerte"></div>
+  </div>
+
+  <div class="card" id="formObjectif">
+    <h2>Créer un objectif</h2>
+    <input id="oNom" placeholder="But (ex : Tabaski, stock, scolarité)">
+    <input id="oMontant" type="number" min="0" placeholder="Montant à atteindre (F)">
+    <label class="hint">Date limite</label>
+    <input id="oDate" type="date">
+    <input id="oTuteur" placeholder="Tuteur : nom (facultatif)">
+    <input id="oTel" type="tel" placeholder="Tuteur : téléphone (WhatsApp)">
+    <button onclick="creerObjectif()">Créer l'objectif</button>
+  </div>
+
+  <div class="card" id="formVersement">
+    <h2>Noter un versement</h2>
+    <div class="row">
+      <input id="vMontant" type="number" min="0" placeholder="Montant (F)">
+      <select id="vType">
+        <option value="versement">Versement</option>
+        <option value="retrait">Retrait (anticipé)</option>
+      </select>
+    </div>
+    <input id="vNote" placeholder="Note (ex : recette du jour)">
+    <button onclick="ajouterMouvement()">Enregistrer</button>
+    <div class="hint">Tu fais le transfert toi-même sur Mobile Money. L'app le note seulement.</div>
+  </div>
+
+  <div class="card" id="historique">
+    <h2>Historique</h2>
+    <div id="liste"></div>
+  </div>
+
+  <div class="card hidden" id="carteReset">
+    <button class="sec" onclick="reset()">Effacer l'objectif</button>
+  </div>
+</main>
+
+<script>
+  const KEY = 'epargne_demo';
+  let data = JSON.parse(localStorage.getItem(KEY) || 'null') || { objectif: null };
+  const sauver = () => localStorage.setItem(KEY, JSON.stringify(data));
+  const fmt = n => Math.round(n).toLocaleString('fr-FR').replace(/\u202f|\u00a0/g,' ') + ' F';
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+
+  function solde(o) {
+    return o.mouvements.reduce((s, m) => s + (m.type === 'retrait' ? -m.montant : m.montant), 0);
+  }
+
+  function joursRestants(dateStr) {
+    const fin = new Date(dateStr + 'T00:00:00');
+    const auj = new Date(); auj.setHours(0,0,0,0);
+    return Math.ceil((fin - auj) / 86400000);
+  }
+
+  function creerObjectif() {
+    const nom = document.getElementById('oNom').value.trim();
+    const montant = +document.getElementById('oMontant').value;
+    const date = document.getElementById('oDate').value;
+    if (!nom || !montant || !date) { alert('Remplis le but, le montant et la date.'); return; }
+    data.objectif = {
+      id: uid(), nom, montant, date,
+      tuteur: document.getElementById('oTuteur').value.trim(),
+      tel: document.getElementById('oTel').value.replace(/\D/g,''),
+      mouvements: []
+    };
+    sauver(); rendu();
+  }
+
+  function ajouterMouvement() {
+    const o = data.objectif;
+    if (!o) { alert("Crée d'abord un objectif."); return; }
+    const montant = +document.getElementById('vMontant').value;
+    if (!montant || montant <= 0) { alert('Entre un montant valide.'); return; }
+    const type = document.getElementById('vType').value;
+    const m = {
+      id: uid(), type, montant,
+      note: document.getElementById('vNote').value.trim(),
+      date: new Date().toISOString().slice(0,10)
+    };
+    o.mouvements.push(m);
+    sauver();
+    document.getElementById('vMontant').value = '';
+    document.getElementById('vNote').value = '';
+    rendu();
+    if (type === 'retrait') proposerAlerteTuteur(m);
+  }
+
+  // Un retrait anticipé ouvre un message WhatsApp prêt à envoyer au tuteur
+  function proposerAlerteTuteur(m) {
+    const o = data.objectif;
+    if (!o.tel) return;
+    if (!confirm('Prévenir ton tuteur (' + (o.tuteur || 'ton tuteur') + ') de ce retrait ?')) return;
+    const msg = `Bonjour ${o.tuteur || ''}, je vous informe d'un retrait de ${fmt(m.montant)} sur mon objectif « ${o.nom} ». Il reste ${fmt(solde(o))}. Merci.`;
+    window.open('https://wa.me/' + o.tel + '?text=' + encodeURIComponent(msg), '_blank');
+  }
+
+  function reset() {
+    if (!confirm("Effacer l'objectif et son historique ?")) return;
+    data = { objectif: null }; sauver(); rendu();
+  }
+
+  function rendu() {
+    const o = data.objectif;
+    const carte = document.getElementById('carteObjectif');
+    document.getElementById('formObjectif').classList.toggle('hidden', !!o);
+    document.getElementById('formVersement').classList.toggle('hidden', !o);
+    document.getElementById('historique').classList.toggle('hidden', !o);
+    document.getElementById('carteReset').classList.toggle('hidden', !o);
+
+    if (!o) {
+      document.getElementById('titreObj').textContent = 'Aucun objectif';
+      document.getElementById('montantObj').textContent = '';
+      document.getElementById('progress').style.width = '0%';
+      ['pourcent','jours','rythme','alerte'].forEach(i => document.getElementById(i).textContent = '');
+      return;
+    }
+
+    const s = solde(o);
+    const pct = Math.max(0, Math.min(100, s / o.montant * 100));
+    const restant = Math.max(0, o.montant - s);
+    const jours = joursRestants(o.date);
+
+    document.getElementById('titreObj').textContent = o.nom;
+    document.getElementById('montantObj').textContent = fmt(s) + ' / ' + fmt(o.montant);
+    document.getElementById('progress').style.width = pct + '%';
+    document.getElementById('pourcent').textContent = Math.round(pct) + ' % atteint';
+
+    const j = document.getElementById('jours');
+    const r = document.getElementById('rythme');
+    const a = document.getElementById('alerte');
+    j.textContent = jours >= 0 ? jours + ' jour(s) avant la date limite' : 'Date limite dépassée';
+    if (s >= o.montant) {
+      r.textContent = ''; a.textContent = '';
+      r.innerHTML = '<span class="ok">Objectif atteint.</span>';
+    } else if (jours > 0) {
+      r.textContent = 'Pour atteindre le but : environ ' + fmt(restant / jours) + ' par jour.';
+      a.textContent = '';
+    } else {
+      r.textContent = 'Reste à épargner : ' + fmt(restant) + '.';
+      a.innerHTML = '<span class="alerte">Le délai est passé.</span>';
+    }
+
+    const liste = document.getElementById('liste');
+    liste.innerHTML = o.mouvements.length
+      ? [...o.mouvements].reverse().map(m =>
+          `<div class="mvt ${m.type}"><span>${m.date} · ${m.type === 'retrait' ? 'Retrait' : 'Versement'}${m.note ? ' · ' + m.note : ''}</span><b>${m.type === 'retrait' ? '−' : '+'}${fmt(m.montant)}</b></div>`
+        ).join('')
+      : '<div class="hint">Aucun mouvement pour l\'instant.</div>';
+  }
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+  rendu();
+</script>
+</body>
+</html>
